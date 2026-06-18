@@ -1,0 +1,41 @@
+name: Sync MinIO Binary
+
+on:
+  workflow_dispatch: # 允许手动在页面点击运行
+  schedule:
+    - cron: '0 0 * * 1' # 每周一 UTC 时间 0:00 自动执行（同步最新版）
+
+jobs:
+  sync-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # 赋予 Action 创建和写入 Release 的权限
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download MinIO Binary
+        run: |
+          # 利用 GitHub 极速下载最新版
+          wget https://dl.min.io/server/minio/release/linux-amd64/minio
+          chmod +x minio
+          
+      - name: Extract Version
+        id: minio_version
+        run: |
+          # 提取 MinIO 版本号作为 Tag，例如 RELEASE.2023-10-16T04-13-37Z
+          VERSION=$(./minio --version | grep -o 'RELEASE\.[0-9TZ-]*')
+          if [ -z "$VERSION" ]; then
+            VERSION="latest-$(date +%Y%m%d)"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.minio_version.outputs.VERSION }}
+          name: MinIO ${{ steps.minio_version.outputs.VERSION }}
+          files: minio
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
