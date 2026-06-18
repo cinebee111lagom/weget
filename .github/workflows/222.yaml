@@ -1,0 +1,91 @@
+name: Universal Downloader (With Gitee Sync)
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: '📌 请输入海外文件的下载直链 (URL)'
+        required: true
+        type: string
+      file_name:
+        description: '📦 请指定保存的文件名 (例如: mc 或 config.zip)'
+        required: true
+        type: string
+
+jobs:
+  download-sync-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write 
+
+    steps:
+      - name: 1. 拉取当前代码仓库
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 
+
+      - name: 2. 根据输入的 URL 下载文件
+        run: |
+          echo "开始从海外节点下载: ${{ github.event.inputs.target_url }}"
+          wget -O "${{ github.event.inputs.file_name }}" "${{ github.event.inputs.target_url }}"
+          
+          ls -lh "${{ github.event.inputs.file_name }}"
+
+          if [ ! -s "${{ github.event.inputs.file_name }}" ]; then
+            echo "❌ 错误：下载的文件大小为 0，请检查填入的 URL 是否有效！"
+            exit 1
+          fi
+
+      - name: 3. 推送文件到 Gitee 国内仓库 (推送到 master 分支)
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GITEE_REPO: "lagom666/weget"
+        run: |
+          export GIT_TERMINAL_PROMPT=0
+          
+          echo "开始配置 Git 环境..."
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          echo "将文件加入 Git 暂存区并提交..."
+          git add "${{ github.event.inputs.file_name }}"
+          git commit -m "Auto sync: ${{ github.event.inputs.file_name }}" || echo "文件无变化，跳过提交"
+          
+          echo "推送到 Gitee 仓库..."
+          git remote add gitee "https://oauth2:${GITEE_TOKEN}@gitee.com/${GITEE_REPO}.git"
+          
+          # 核心修复：使用绝对路径，强制推送到 Gitee 的 master 分支，避开 main 的命名冲突
+          git push -v -f gitee HEAD:refs/heads/master
+          echo "✅ 成功推送到 Gitee！"
+
+      - name: 4. 生成唯一的版本号 (基于时间戳)
+        id: generate_tag
+        run: |
+          TAG="dl-$(date +'%Y%m%d%H%M%S')"
+          echo "TAG=$TAG" >> $GITHUB_OUTPUT
+
+      - name: 5. 上传文件到 GitHub Release 附件
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.generate_tag.outputs.TAG }}
+          name: Download Task ${{ steps.generate_tag.outputs.TAG }}
+          files: ${{ github.event.inputs.file_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 6. 输出所有可用下载渠道的 wget 命令
+        env:
+          GITEE_REPO: "lagom666/weget"
+        run: |
+          echo "=========================================================================="
+          echo "✅ 任务全流程完成！请根据网络情况选择下载方式："
+          echo ""
+          echo "🇨🇳 【方案 A：Gitee 国内仓库 Raw 直连】 (极速，已更新为 master 分支路径):"
+          echo "wget -O ${{ github.event.inputs.file_name }} \"https://gitee.com/${GITEE_REPO}/raw/master/${{ github.event.inputs.file_name }}\""
+          echo ""
+          echo "🚀 【方案 B：GitHub 国内镜像加速代理】 (速度快，适合大文件):"
+          echo "wget -O ${{ github.event.inputs.file_name }} \"https://ghproxy.net/https://github.com/${{ github.repository }}/releases/download/${{ steps.generate_tag.outputs.TAG }}/${{ github.event.inputs.file_name }}\""
+          echo ""
+          echo "🌍 【方案 C：GitHub 官方原生直链】 (适合海外服务器或本地挂载代理):"
+          echo "wget -O ${{ github.event.inputs.file_name }} \"https://github.com/${{ github.repository }}/releases/download/${{ steps.generate_tag.outputs.TAG }}/${{ github.event.inputs.file_name }}\""
+          echo "=========================================================================="
