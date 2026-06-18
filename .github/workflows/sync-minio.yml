@@ -42,8 +42,8 @@ jobs:
         env:
           # 必须在 GitHub Secrets 中配置此变量
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
-          # ⚠️ 请修改为您自己的 Gitee 用户名和仓库名
-          GITEE_REPO: "your_gitee_username/your_gitee_repo"
+          # 已替换为您的真实 Gitee 仓库路径
+          GITEE_REPO: "lagom666/weget"
         run: |
           echo "开始配置 Git 环境..."
           git config --global user.name "github-actions[bot]"
@@ -76,7 +76,8 @@ jobs:
 
       - name: 6. 输出所有可用下载渠道的 wget 命令
         env:
-          GITEE_REPO: "your_gitee_username/your_gitee_repo" # 此处也请同步修改
+          # 已替换为您的真实 Gitee 仓库路径
+          GITEE_REPO: "lagom666/weget"
         run: |
           echo "=========================================================================="
           echo "✅ 任务全流程完成！请根据网络情况选择下载方式："
