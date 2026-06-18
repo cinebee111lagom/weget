@@ -1,6 +1,5 @@
-name: 3333
+name: Universal Downloader (Sync to Aliyun OSS)
 
-# 触发条件：网页手动触发，并带有个性化输入框
 on:
   workflow_dispatch:
     inputs:
@@ -14,95 +13,50 @@ on:
         type: string
 
 jobs:
-  download-sync-and-release:
+  download-and-sync-oss:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write # 允许 Action 创建 Release 和提交代码
 
     steps:
-      - name: 1. 拉取当前代码仓库
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # 拉取完整历史，以备其他操作
-
-      - name: 2. 根据输入的 URL 下载文件
+      - name: 1. 根据输入的 URL 下载海外文件
         run: |
           echo "开始从海外节点下载: ${{ github.event.inputs.target_url }}"
           wget -O "${{ github.event.inputs.file_name }}" "${{ github.event.inputs.target_url }}"
           
           ls -lh "${{ github.event.inputs.file_name }}"
-
-          # 安全合规检查：验证文件是否为空
           if [ ! -s "${{ github.event.inputs.file_name }}" ]; then
             echo "❌ 错误：下载的文件大小为 0，请检查填入的 URL 是否有效！"
             exit 1
           fi
 
-      - name: 3. 推送文件到 Gitee 国内仓库 (极限瘦身加速版)
+      - name: 2. 安装并配置阿里云 OSS 工具 (ossutil)
         env:
-          # 必须在 GitHub 的 Repository Secrets 中配置此变量
-          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
-          GITEE_REPO: "lagom666/weget"
+          OSS_ENDPOINT: ${{ secrets.OSS_ENDPOINT }}
+          OSS_AK: ${{ secrets.OSS_AK }}
+          OSS_SK: ${{ secrets.OSS_SK }}
         run: |
-          export GIT_TERMINAL_PROMPT=0
-          echo "开始配置纯净 Git 环境..."
+          echo "拉取阿里云官方 ossutil 工具..."
+          wget -q https://gosspublic.alicdn.com/ossutil/1.7.16/ossutil64
+          chmod 755 ossutil64
           
-          # 【核心优化】：创建一个全新空白目录，隔离 GitHub 的历史记录
-          mkdir temp_sync_dir
-          
-          # 将刚才下载的文件移动到这个纯净目录中
-          mv "${{ github.event.inputs.file_name }}" temp_sync_dir/
-          cd temp_sync_dir
-          
-          # 在空白目录里初始化一个毫无历史包袱的 Git 仓库
-          git init
-          git config user.name "github-actions[bot]"
-          git config user.email "bot@noreply.github.com"
-          
-          echo "将单文件加入暂存区并提交..."
-          git add "${{ github.event.inputs.file_name }}"
-          git commit -m "Auto sync: ${{ github.event.inputs.file_name }}"
-          
-          echo "暴力推送到 Gitee 仓库..."
-          git remote add gitee "https://oauth2:${GITEE_TOKEN}@gitee.com/${GITEE_REPO}.git"
-          
-          # 强制覆盖 Gitee 的 master 分支，此时网络传输的数据量绝对最小
-          git push -v -f gitee HEAD:refs/heads/master
-          echo "✅ 成功推送到 Gitee！"
-          
-          # 收尾：把文件移回原处，以便后续第 5 步能顺利发布到 GitHub Release
-          mv "${{ github.event.inputs.file_name }}" ../
-          cd ..
-          rm -rf temp_sync_dir
+          echo "配置鉴权信息..."
+          ./ossutil64 config -e "$OSS_ENDPOINT" -i "$OSS_AK" -k "$OSS_SK" -L CH -c ~/.ossutilconfig
 
-      - name: 4. 生成唯一的版本号 (基于时间戳)
-        id: generate_tag
+      - name: 3. 多线程极速推送到阿里云 OSS
+        env:
+          OSS_BUCKET: ${{ secrets.OSS_BUCKET }}
         run: |
-          TAG="dl-$(date +'%Y%m%d%H%M%S')"
-          echo "TAG=$TAG" >> $GITHUB_OUTPUT
+          echo "开始将文件推送到 OSS..."
+          # 将文件上传到 Bucket 的 root 目录。使用 -f 强制覆盖同名文件
+          ./ossutil64 cp "${{ github.event.inputs.file_name }}" "oss://$OSS_BUCKET/${{ github.event.inputs.file_name }}" -f
+          echo "✅ 成功推送到阿里云 OSS！"
 
-      - name: 5. 上传文件到 GitHub Release 附件
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.generate_tag.outputs.TAG }}
-          name: Download Task ${{ steps.generate_tag.outputs.TAG }}
-          files: ${{ github.event.inputs.file_name }}
+      - name: 4. 输出国内极速下载命令
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: 6. 输出所有可用下载渠道的 wget 命令
-        env:
-          GITEE_REPO: "lagom666/weget"
+          OSS_DOMAIN: ${{ secrets.OSS_DOMAIN }}
         run: |
           echo "=========================================================================="
-          echo "✅ 任务全流程完成！请根据网络情况选择下载方式："
+          echo "✅ 任务全流程完成！文件已稳稳存入您的阿里云 OSS。"
           echo ""
-          echo "🇨🇳 【方案 A：Gitee 国内仓库 Raw 直连】 (极速，单文件限制 50MB):"
-          echo "wget -O ${{ github.event.inputs.file_name }} \"https://gitee.com/${GITEE_REPO}/raw/master/${{ github.event.inputs.file_name }}\""
-          echo ""
-          echo "🚀 【方案 B：GitHub 国内镜像加速代理】 (速度快，适合大文件):"
-          echo "wget -O ${{ github.event.inputs.file_name }} \"https://ghproxy.net/https://github.com/${{ github.repository }}/releases/download/${{ steps.generate_tag.outputs.TAG }}/${{ github.event.inputs.file_name }}\""
-          echo ""
-          echo "🌍 【方案 C：GitHub 官方原生直链】 (适合海外服务器或本地挂载代理):"
-          echo "wget -O ${{ github.event.inputs.file_name }} \"https://github.com/${{ github.repository }}/releases/download/${{ steps.generate_tag.outputs.TAG }}/${{ github.event.inputs.file_name }}\""
+          echo "🚀 【阿里云 OSS 国内极速直连】 (稳定满带宽):"
+          echo "wget -O ${{ github.event.inputs.file_name }} \"https://$OSS_DOMAIN/${{ github.event.inputs.file_name }}\""
           echo "=========================================================================="
