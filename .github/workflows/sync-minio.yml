@@ -1,48 +1,55 @@
-name: Sync MinIO Binary
+name: Universal Downloader
 
+# 触发条件配置
 on:
-  workflow_dispatch: # 支持在 GitHub 页面手动点击触发
-  schedule:
-    - cron: '0 0 * * 1' # 定时任务：每周一 UTC 时间 0:00 自动运行以同步最新版
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: '📌 请输入海外文件的下载直链 (URL)'
+        required: true
+        type: string
+      file_name:
+        description: '📦 请指定保存的文件名 (例如: minio 或 data.zip)'
+        required: true
+        type: string
 
 jobs:
-  sync-release:
+  download-and-proxy:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # 必须赋予 Action 创建和写入 Release 的权限
+      contents: write # 必须权限：用于发布 Release 附件
 
     steps:
-      - name: 1. 拉取仓库代码
+      - name: 1. 拉取当前仓库
         uses: actions/checkout@v4
 
-      - name: 2. 下载 MinIO 官方最新二进制文件
+      - name: 2. 根据输入的 URL 下载文件
         run: |
-          wget https://dl.min.io/server/minio/release/linux-amd64/minio
-          chmod +x minio
+          echo "开始下载: ${{ github.event.inputs.target_url }}"
+          # 使用 wget 下载，并强制重命名为输入的文件名
+          wget -O "${{ github.event.inputs.file_name }}" "${{ github.event.inputs.target_url }}"
           
-      - name: 3. 提取 MinIO 真实版本号
-        id: minio_version
-        run: |
-          # 提取类似 RELEASE.2024-03-07T00-43-48Z 的版本号作为 Tag
-          VERSION=$(./minio --version | grep -o 'RELEASE\.[0-9TZ-]*')
-          if [ -z "$VERSION" ]; then
-            VERSION="latest-$(date +%Y%m%d)"
-          fi
-          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          # 列出文件检查大小
+          ls -lh "${{ github.event.inputs.file_name }}"
 
-      - name: 4. 发布至 GitHub Release 附件
+      - name: 3. 生成唯一的版本号 (基于时间戳)
+        id: generate_tag
+        run: |
+          # 每次运行生成一个不重复的 Tag，例如 dl-20231024153000
+          TAG="dl-$(date +'%Y%m%d%H%M%S')"
+          echo "TAG=$TAG" >> $GITHUB_OUTPUT
+
+      - name: 4. 上传文件到 GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.minio_version.outputs.VERSION }}
-          name: MinIO ${{ steps.minio_version.outputs.VERSION }}
-          files: minio
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: 5. 动态输出国内专用下载链接
+          tag_name: ${{ steps.generate_tag.outputs.TAG }}
+          name: Download Task ${{ steps.generate_tag.outputs.TAG }}
+          files: ${{ github.event.inputs.file_name }}
+          
+      - name: 5. 输出国内加速下载命令
         run: |
-          echo "=== 任务执行完毕 ==="
           echo "=========================================================================="
-          echo "👉 国内服务器专用极速下载链接 (复制下方链接到国内服务器执行 wget):"
-          echo "https://ghproxy.net/https://github.com/${{ github.repository }}/releases/download/${{ steps.minio_version.outputs.VERSION }}/minio"
+          echo "✅ 任务完成！请在你的国内服务器上直接运行以下命令即可下载："
+          echo ""
+          echo "wget -O ${{ github.event.inputs.file_name }} \"https://ghproxy.net/https://github.com/${{ github.repository }}/releases/download/${{ steps.generate_tag.outputs.TAG }}/${{ github.event.inputs.file_name }}\""
           echo "=========================================================================="
