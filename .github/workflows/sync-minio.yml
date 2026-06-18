@@ -9,7 +9,7 @@ on:
         required: true
         type: string
       file_name:
-        description: '📦 请指定保存的文件名 (例如: script.sh 或 config.json)'
+        description: '📦 请指定保存的文件名 (例如: mc 或 config.zip)'
         required: true
         type: string
 
@@ -38,13 +38,15 @@ jobs:
             exit 1
           fi
 
-      - name: 3. 推送文件到 Gitee 国内仓库
+      - name: 3. 推送文件到 Gitee 国内仓库 (带防卡死机制)
         env:
-          # 必须在 GitHub Secrets 中配置此变量
+          # 必须在 GitHub 的 Repository Secrets 中配置此变量
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
-          # 已替换为您的真实 Gitee 仓库路径
           GITEE_REPO: "lagom666/weget"
         run: |
+          # 全局禁用 Git 的交互式密码输入弹窗，强制暴露真实错误日志
+          export GIT_TERMINAL_PROMPT=0
+          
           echo "开始配置 Git 环境..."
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
@@ -55,8 +57,10 @@ jobs:
           
           echo "推送到 Gitee 仓库..."
           git remote add gitee "https://oauth2:${GITEE_TOKEN}@gitee.com/${GITEE_REPO}.git"
-          # 强制推送到 main 分支 (如果您的 Gitee 默认分支是 master，请将下面的 main 改为 master)
-          git push -f gitee HEAD:main
+          
+          # 强制推送到 main 分支，并使用 -v 参数打印详细推送日志
+          # ⚠️ 注意：如果您的 Gitee 仓库默认分支是 master，请将下方的 main 改为 master
+          git push -v -f gitee HEAD:main
           echo "✅ 成功推送到 Gitee！"
 
       - name: 4. 生成唯一的版本号 (基于时间戳)
@@ -76,18 +80,18 @@ jobs:
 
       - name: 6. 输出所有可用下载渠道的 wget 命令
         env:
-          # 已替换为您的真实 Gitee 仓库路径
           GITEE_REPO: "lagom666/weget"
         run: |
           echo "=========================================================================="
           echo "✅ 任务全流程完成！请根据网络情况选择下载方式："
           echo ""
-          echo "🇨🇳 【方案 A：Gitee 国内仓库 Raw 直连】 (极速，但受 Gitee 策略限制，不适合大文件):"
+          echo "🇨🇳 【方案 A：Gitee 国内仓库 Raw 直连】 (极速，单文件限制 50MB):"
           echo "wget -O ${{ github.event.inputs.file_name }} \"https://gitee.com/${GITEE_REPO}/raw/main/${{ github.event.inputs.file_name }}\""
           echo ""
-          echo "🚀 【方案 B：GitHub 国内镜像加速代理】 (速度快，适合大文件，依赖第三方节点):"
+          echo "🚀 【方案 B：GitHub 国内镜像加速代理】 (速度快，适合大文件):"
           echo "wget -O ${{ github.event.inputs.file_name }} \"https://ghproxy.net/https://github.com/${{ github.repository }}/releases/download/${{ steps.generate_tag.outputs.TAG }}/${{ github.event.inputs.file_name }}\""
           echo ""
           echo "🌍 【方案 C：GitHub 官方原生直链】 (适合海外服务器或本地挂载代理):"
           echo "wget -O ${{ github.event.inputs.file_name }} \"https://github.com/${{ github.repository }}/releases/download/${{ steps.generate_tag.outputs.TAG }}/${{ github.event.inputs.file_name }}\""
           echo "=========================================================================="
+          
