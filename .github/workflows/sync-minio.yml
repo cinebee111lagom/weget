@@ -1,6 +1,6 @@
 name: Universal Downloader
 
-# 触发条件配置
+# 触发条件：网页手动触发，并带有个性化输入框
 on:
   workflow_dispatch:
     inputs:
@@ -17,7 +17,7 @@ jobs:
   download-and-proxy:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # 必须权限：用于发布 Release 附件
+      contents: write # 核心权限：允许 Action 创建 Release 并上传附件
 
     steps:
       - name: 1. 拉取当前仓库
@@ -26,16 +26,21 @@ jobs:
       - name: 2. 根据输入的 URL 下载文件
         run: |
           echo "开始下载: ${{ github.event.inputs.target_url }}"
-          # 使用 wget 下载，并强制重命名为输入的文件名
+          # 使用 wget 下载并强制重命名
           wget -O "${{ github.event.inputs.file_name }}" "${{ github.event.inputs.target_url }}"
-          
-          # 列出文件检查大小
+          # 打印文件大小和信息
           ls -lh "${{ github.event.inputs.file_name }}"
+
+          # 安全合规检查：验证下载的文件是否有效（避免下载到空的或错误页面）
+          if [ ! -s "${{ github.event.inputs.file_name }}" ]; then
+            echo "❌ 错误：下载的文件大小为 0，请检查填入的 URL 是否为有效的直链！"
+            exit 1
+          fi
 
       - name: 3. 生成唯一的版本号 (基于时间戳)
         id: generate_tag
         run: |
-          # 每次运行生成一个不重复的 Tag，例如 dl-20231024153000
+          # 每次运行生成一个不重复的 Tag（形如 dl-20260618163000）
           TAG="dl-$(date +'%Y%m%d%H%M%S')"
           echo "TAG=$TAG" >> $GITHUB_OUTPUT
 
@@ -45,11 +50,17 @@ jobs:
           tag_name: ${{ steps.generate_tag.outputs.TAG }}
           name: Download Task ${{ steps.generate_tag.outputs.TAG }}
           files: ${{ github.event.inputs.file_name }}
-          
-      - name: 5. 输出国内加速下载命令
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 5. 输出所有可用的下载命令
         run: |
           echo "=========================================================================="
-          echo "✅ 任务完成！请在你的国内服务器上直接运行以下命令即可下载："
+          echo "✅ 任务完成！请根据你的服务器网络环境选择合适的下载命令："
           echo ""
+          echo "🚀 【方案 A：国内服务器加速下载】 (通过 ghproxy 代理，速度极快):"
           echo "wget -O ${{ github.event.inputs.file_name }} \"https://ghproxy.net/https://github.com/${{ github.repository }}/releases/download/${{ steps.generate_tag.outputs.TAG }}/${{ github.event.inputs.file_name }}\""
+          echo ""
+          echo "🌍 【方案 B：海外服务器/本地直连下载】 (GitHub 官方直链，绝对稳定):"
+          echo "wget -O ${{ github.event.inputs.file_name }} \"https://github.com/${{ github.repository }}/releases/download/${{ steps.generate_tag.outputs.TAG }}/${{ github.event.inputs.file_name }}\""
           echo "=========================================================================="
