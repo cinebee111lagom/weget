@@ -41,45 +41,13 @@ jobs:
           echo "FILE_SIZE=$FILE_SIZE" >> $GITHUB_ENV
           echo "📊 文件大小: ${FILE_SIZE}MB"
 
-      - name: 3. 判断文件大小并选择推送方案
-        env:
-          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
-          GITEE_REPO: "lagom666/weget"
-        run: |
-          export GIT_TERMINAL_PROMPT=0
-          FILE_SIZE=${{ env.FILE_SIZE }}
-          
-          if [ $FILE_SIZE -le 50 ]; then
-            echo "✅ 文件 <= 50MB，使用 Gitee 推送方案"
-            mkdir temp_sync_dir
-            mv "${{ github.event.inputs.file_name }}" temp_sync_dir/
-            cd temp_sync_dir
-            
-            git init
-            git config user.name "github-actions[bot]"
-            git config user.email "bot@noreply.github.com"
-            git add "${{ github.event.inputs.file_name }}"
-            git commit -m "Auto sync: ${{ github.event.inputs.file_name }}"
-            
-            git remote add gitee "https://oauth2:${GITEE_TOKEN}@gitee.com/${GITEE_REPO}.git"
-            git push -v -f gitee HEAD:refs/heads/master
-            
-            echo "✅ 成功推送到 Gitee！"
-            mv "${{ github.event.inputs.file_name }}" ../
-            cd ..
-            rm -rf temp_sync_dir
-          else
-            echo "⚠️ 文件 > 50MB，跳过 Gitee 推送（Gitee限制50MB）"
-            echo "SKIP_GITEE=true" >> $GITHUB_ENV
-          fi
-
-      - name: 4. 生成唯一的版本号
+      - name: 3. 生成唯一的版本号
         id: generate_tag
         run: |
           TAG="dl-$(date +'%Y%m%d%H%M%S')"
           echo "TAG=$TAG" >> $GITHUB_OUTPUT
 
-      - name: 5. 上传文件到 GitHub Release
+      - name: 4. 上传文件到 GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.generate_tag.outputs.TAG }}
@@ -88,27 +56,22 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 6. 输出下载命令
-        env:
-          GITEE_REPO: "lagom666/weget"
+      - name: 5. 输出最快的下载命令
         run: |
           FILE_SIZE=${{ env.FILE_SIZE }}
-          SKIP_GITEE=${{ env.SKIP_GITEE }}
+          TAG=${{ steps.generate_tag.outputs.TAG }}
+          REPO=${{ github.repository }}
+          FILE=${{ github.event.inputs.file_name }}
           
           echo "=========================================================================="
           echo "✅ 任务完成！文件大小: ${FILE_SIZE}MB"
           echo ""
-          
-          if [ "$SKIP_GITEE" != "true" ]; then
-            echo "🇨🇳 【方案 A：Gitee 国内仓库 Raw 直连】 (极速):"
-            echo "wget -O ${{ github.event.inputs.file_name }} \"https://gitee.com/${GITEE_REPO}/raw/master/${{ github.event.inputs.file_name }}\""
-            echo ""
-          fi
-          
-          echo "🚀 【方案 B：GitHub 国内镜像加速代理】 (适合大文件):"
-          echo "wget -O ${{ github.event.inputs.file_name }} \"https://ghproxy.net/https://github.com/${{ github.repository }}/releases/download/${{ steps.generate_tag.outputs.TAG }}/${{ github.event.inputs.file_name }}\""
+          echo "🚀 【推荐】最快的镜像加速下载（国内超快速）:"
+          echo "wget -O ${FILE} \"https://mirror.ghproxy.com/https://github.com/${REPO}/releases/download/${TAG}/${FILE}\""
           echo ""
-          
-          echo "🌍 【方案 C：GitHub 官方原生直链】:"
-          echo "wget -O ${{ github.event.inputs.file_name }} \"https://github.com/${{ github.repository }}/releases/download/${{ steps.generate_tag.outputs.TAG }}/${{ github.event.inputs.file_name }}\""
+          echo "📥 备选方案 1（速度较快）:"
+          echo "wget -O ${FILE} \"https://ghproxy.net/https://github.com/${REPO}/releases/download/${TAG}/${FILE}\""
+          echo ""
+          echo "📥 备选方案 2（官方原生直链）:"
+          echo "wget -O ${FILE} \"https://github.com/${REPO}/releases/download/${TAG}/${FILE}\""
           echo "=========================================================================="
