@@ -28,14 +28,14 @@ jobs:
         run: |
           echo "开始从海外节点下载: ${{ github.event.inputs.target_url }}"
           wget -O "${{ github.event.inputs.file_name }}" "${{ github.event.inputs.target_url }}"
-          
+
           ls -lh "${{ github.event.inputs.file_name }}"
 
           if [ ! -s "${{ github.event.inputs.file_name }}" ]; then
             echo "❌ 错误：下载的文件大小为 0，请检查填入的 URL 是否有效！"
             exit 1
           fi
-          
+
           # 获取文件大小（单位：MB）
           FILE_SIZE=$(du -m "${{ github.event.inputs.file_name }}" | cut -f1)
           echo "FILE_SIZE=$FILE_SIZE" >> $GITHUB_ENV
@@ -62,18 +62,23 @@ jobs:
           TAG=${{ steps.generate_tag.outputs.TAG }}
           REPO=${{ github.repository }}
           FILE=${{ github.event.inputs.file_name }}
-          
+
+          MIRROR1="https://mirror.ghproxy.com/https://github.com/${REPO}/releases/download/${TAG}/${FILE}"
+          MIRROR2="https://ghproxy.net/https://github.com/${REPO}/releases/download/${TAG}/${FILE}"
+          DIRECT="https://github.com/${REPO}/releases/download/${TAG}/${FILE}"
+
           echo "=========================================================================="
           echo "✅ 任务完成！文件大小: ${FILE_SIZE}MB"
           echo ""
-          echo "🚀 【推荐】最快的镜像加速下载（国内超快速）:"
-          echo "wget -O ${FILE} \"https://mirror.ghproxy.com/https://github.com/${REPO}/releases/download/${TAG}/${FILE}\""
+          echo "🚀 【推荐】镜像加速 + aria2 多线程下载（国内最快）:"
+          echo "aria2c -x 16 -s 16 -k 1M -c -o ${FILE} \"${MIRROR1}\""
           echo ""
-          echo "📥 备选方案 1（速度较快）:"
-          echo "wget -O ${FILE} \"https://ghproxy.net/https://github.com/${REPO}/releases/download/${TAG}/${FILE}\""
+          echo "📥 备选方案 1（备用镜像 + aria2）:"
+          echo "aria2c -x 16 -s 16 -k 1M -c -o ${FILE} \"${MIRROR2}\""
           echo ""
-          echo "📥 备选方案 2（官方原生直链）:"
-          echo "wget -O ${FILE} \"https://github.com/${REPO}/releases/download/${TAG}/${FILE}\""
+          echo "📥 备选方案 2（官方直链 + aria2，需网络畅通）:"
+          echo "aria2c -x 16 -s 16 -k 1M -c -o ${FILE} \"${DIRECT}\""
+          echo ""
+          echo "📥 备选方案 3（单线程 wget）:"
+          echo "wget -O ${FILE} \"${MIRROR1}\""
           echo "=========================================================================="
-          echo "📥 备选方案 2（速度较快）:"
-          echo "wget -O ${FILE} \"https://ghproxy.homeboyc.cn/https://github.com/${REPO}/releases/download/${TAG}/${FILE}\""
