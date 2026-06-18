@@ -1,37 +1,36 @@
 name: Sync MinIO Binary
 
 on:
-  workflow_dispatch: # 允许手动在页面点击运行
+  workflow_dispatch: # 支持在 GitHub 页面手动点击触发
   schedule:
-    - cron: '0 0 * * 1' # 每周一 UTC 时间 0:00 自动执行（同步最新版）
+    - cron: '0 0 * * 1' # 定时任务：每周一 UTC 时间 0:00 自动运行以同步最新版
 
 jobs:
   sync-release:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # 赋予 Action 创建和写入 Release 的权限
+      contents: write # 必须赋予 Action 创建和写入 Release 的权限
 
     steps:
-      - name: Checkout code
+      - name: 1. 拉取仓库代码
         uses: actions/checkout@v4
 
-      - name: Download MinIO Binary
+      - name: 2. 下载 MinIO 官方最新二进制文件
         run: |
-          # 利用 GitHub 极速下载最新版
           wget https://dl.min.io/server/minio/release/linux-amd64/minio
           chmod +x minio
           
-      - name: Extract Version
+      - name: 3. 提取 MinIO 真实版本号
         id: minio_version
         run: |
-          # 提取 MinIO 版本号作为 Tag，例如 RELEASE.2023-10-16T04-13-37Z
+          # 提取类似 RELEASE.2024-03-07T00-43-48Z 的版本号作为 Tag
           VERSION=$(./minio --version | grep -o 'RELEASE\.[0-9TZ-]*')
           if [ -z "$VERSION" ]; then
             VERSION="latest-$(date +%Y%m%d)"
           fi
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Publish to GitHub Release
+      - name: 4. 发布至 GitHub Release 附件
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.minio_version.outputs.VERSION }}
@@ -39,3 +38,11 @@ jobs:
           files: minio
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 5. 动态输出国内专用下载链接
+        run: |
+          echo "=== 任务执行完毕 ==="
+          echo "=========================================================================="
+          echo "👉 国内服务器专用极速下载链接 (复制下方链接到国内服务器执行 wget):"
+          echo "https://ghproxy.net/https://github.com/${{ github.repository }}/releases/download/${{ steps.minio_version.outputs.VERSION }}/minio"
+          echo "=========================================================================="
