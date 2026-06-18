@@ -1,4 +1,4 @@
-name: Universal Downloader
+name: Universal Downloader (With Gitee Sync)
 
 # 触发条件：网页手动触发，并带有个性化输入框
 on:
@@ -9,42 +9,63 @@ on:
         required: true
         type: string
       file_name:
-        description: '📦 请指定保存的文件名 (例如: minio 或 data.zip)'
+        description: '📦 请指定保存的文件名 (例如: script.sh 或 config.json)'
         required: true
         type: string
 
 jobs:
-  download-and-proxy:
+  download-sync-and-release:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # 核心权限：允许 Action 创建 Release 并上传附件
+      contents: write # 允许 Action 创建 Release 和提交代码
 
     steps:
-      - name: 1. 拉取当前仓库
+      - name: 1. 拉取当前代码仓库
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # 拉取完整历史，避免 Push 失败
 
       - name: 2. 根据输入的 URL 下载文件
         run: |
-          echo "开始下载: ${{ github.event.inputs.target_url }}"
-          # 使用 wget 下载并强制重命名
+          echo "开始从海外节点下载: ${{ github.event.inputs.target_url }}"
           wget -O "${{ github.event.inputs.file_name }}" "${{ github.event.inputs.target_url }}"
-          # 打印文件大小和信息
+          
           ls -lh "${{ github.event.inputs.file_name }}"
 
-          # 安全合规检查：验证下载的文件是否有效（避免下载到空的或错误页面）
+          # 安全合规检查：验证文件是否为空
           if [ ! -s "${{ github.event.inputs.file_name }}" ]; then
-            echo "❌ 错误：下载的文件大小为 0，请检查填入的 URL 是否为有效的直链！"
+            echo "❌ 错误：下载的文件大小为 0，请检查填入的 URL 是否有效！"
             exit 1
           fi
 
-      - name: 3. 生成唯一的版本号 (基于时间戳)
+      - name: 3. 推送文件到 Gitee 国内仓库
+        env:
+          # 必须在 GitHub Secrets 中配置此变量
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          # ⚠️ 请修改为您自己的 Gitee 用户名和仓库名
+          GITEE_REPO: "your_gitee_username/your_gitee_repo"
+        run: |
+          echo "开始配置 Git 环境..."
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          echo "将文件加入 Git 暂存区并提交..."
+          git add "${{ github.event.inputs.file_name }}"
+          git commit -m "Auto sync: ${{ github.event.inputs.file_name }}" || echo "文件无变化，跳过提交"
+          
+          echo "推送到 Gitee 仓库..."
+          git remote add gitee "https://oauth2:${GITEE_TOKEN}@gitee.com/${GITEE_REPO}.git"
+          # 强制推送到 main 分支 (如果您的 Gitee 默认分支是 master，请将下面的 main 改为 master)
+          git push -f gitee HEAD:main
+          echo "✅ 成功推送到 Gitee！"
+
+      - name: 4. 生成唯一的版本号 (基于时间戳)
         id: generate_tag
         run: |
-          # 每次运行生成一个不重复的 Tag（形如 dl-20260618163000）
           TAG="dl-$(date +'%Y%m%d%H%M%S')"
           echo "TAG=$TAG" >> $GITHUB_OUTPUT
 
-      - name: 4. 上传文件到 GitHub Release
+      - name: 5. 上传文件到 GitHub Release 附件
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.generate_tag.outputs.TAG }}
@@ -53,14 +74,19 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 5. 输出所有可用的下载命令
+      - name: 6. 输出所有可用下载渠道的 wget 命令
+        env:
+          GITEE_REPO: "your_gitee_username/your_gitee_repo" # 此处也请同步修改
         run: |
           echo "=========================================================================="
-          echo "✅ 任务完成！请根据你的服务器网络环境选择合适的下载命令："
+          echo "✅ 任务全流程完成！请根据网络情况选择下载方式："
           echo ""
-          echo "🚀 【方案 A：国内服务器加速下载】 (通过 ghproxy 代理，速度极快):"
+          echo "🇨🇳 【方案 A：Gitee 国内仓库 Raw 直连】 (极速，但受 Gitee 策略限制，不适合大文件):"
+          echo "wget -O ${{ github.event.inputs.file_name }} \"https://gitee.com/${GITEE_REPO}/raw/main/${{ github.event.inputs.file_name }}\""
+          echo ""
+          echo "🚀 【方案 B：GitHub 国内镜像加速代理】 (速度快，适合大文件，依赖第三方节点):"
           echo "wget -O ${{ github.event.inputs.file_name }} \"https://ghproxy.net/https://github.com/${{ github.repository }}/releases/download/${{ steps.generate_tag.outputs.TAG }}/${{ github.event.inputs.file_name }}\""
           echo ""
-          echo "🌍 【方案 B：海外服务器/本地直连下载】 (GitHub 官方直链，绝对稳定):"
+          echo "🌍 【方案 C：GitHub 官方原生直链】 (适合海外服务器或本地挂载代理):"
           echo "wget -O ${{ github.event.inputs.file_name }} \"https://github.com/${{ github.repository }}/releases/download/${{ steps.generate_tag.outputs.TAG }}/${{ github.event.inputs.file_name }}\""
           echo "=========================================================================="
