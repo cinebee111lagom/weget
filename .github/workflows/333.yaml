@@ -75,3 +75,5 @@ jobs:
           echo "📥 备选方案 2（官方原生直链）:"
           echo "wget -O ${FILE} \"https://github.com/${REPO}/releases/download/${TAG}/${FILE}\""
           echo "=========================================================================="
+          echo "📥 备选方案 2（速度较快）:"
+          echo "wget -O ${FILE} \"https://ghproxy.homeboyc.cn/https://github.com/${REPO}/releases/download/${TAG}/${FILE}\""
